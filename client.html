@@ -1,58 +1,185 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>SSEClient Demo</title>
-  <style>
-    body { font-family: sans-serif; padding: 2rem; }
-    #events { margin-top: 1rem; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .event-log {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+        .event {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-left: 4px solid #4CAF50;
+            background-color: white;
+        }
+        .event.resumed {
+            border-left-color: #2196F3;
+        }
+        .event.error {
+            border-left-color: #f44336;
+        }
+        .event.heartbeat {
+            border-left-color: #9E9E9E;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin-right: 10px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .event-id {
+            font-weight: bold;
+            color: #666;
+        }
+        .event-time {
+            color: #888;
+            font-size: 0.9em;
+        }
+        .event-data {
+            margin-top: 5px;
+            white-space: pre-wrap;
+        }
+    </style>
 </head>
 <body>
-  <h1>SSE Event Stream</h1>
-  <button id="start">Start Stream</button>
-  <button id="stop">Stop Stream</button>
-  <div id="events"></div>
+    <h1>SSE Client</h1>
+    <div class="controls">
+        <button id="connect">Connect</button>
+        <button id="disconnect" disabled>Disconnect</button>
+        <button id="reconnect" disabled>Reconnect</button>
+    </div>
+    <div class="event-log" id="eventLog"></div>
 
-  <script type="module">
-    import { SSEClient } from './SSEClient.js'; // Adjust path as needed
+    <script type="module">
+        import { SSEClient } from './dist/client/SSEClient.js';
+        
+        const eventLog = document.getElementById('eventLog');
+        const connectBtn = document.getElementById('connect');
+        const disconnectBtn = document.getElementById('disconnect');
+        const reconnectBtn = document.getElementById('reconnect');
 
-    const log = (msg) => {
-      const div = document.getElementById('events');
-      const p = document.createElement('p');
-      p.textContent = msg;
-      div.appendChild(p);
-    };
+        let sseClient = null;
 
-    let sseClient = null;
+        function logEvent(event, type = 'normal') {
+            const eventDiv = document.createElement('div');
+            eventDiv.className = `event ${type}`;
+            
+            const eventId = event.id || 'N/A';
+            const eventTime = new Date().toLocaleTimeString();
+            const eventData = typeof event.data === 'string' ? event.data : JSON.stringify(event.data, null, 2);
+            
+            eventDiv.innerHTML = `
+                <div class="event-id">Event ID: ${eventId}</div>
+                <div class="event-time">${eventTime}</div>
+                <div class="event-data">${eventData}</div>
+            `;
+            
+            eventLog.appendChild(eventDiv);
+            eventLog.scrollTop = eventLog.scrollHeight;
+        }
 
-    document.getElementById('start').onclick = () => {
-      sseClient = new SSEClient('http://localhost:3001/events', {
-        enableLogging: true,
-        reconnectInterval: 2000,
-        heartbeatInterval: 15000,
-        onOpen: () => log('✔ Connected'),
-        onError: () => log('❌ Error occurred'),
-        onReconnectAttempt: (n) => log(`🔁 Reconnecting (#${n})`)
-      });
+        function connect() {
+            if (sseClient) return;
 
-      sseClient.on('message', (data) => {
-        log(`📥 Event: ${JSON.stringify(data)}`);
-      });
+            sseClient = new SSEClient('http://localhost:3001/events', {
+                enableLogging: true,
+                reconnectInterval: 5000,
+                heartbeatInterval: 15000,
+                onOpen: () => {
+                    logEvent({ data: 'Connection opened' }, 'normal');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    reconnectBtn.disabled = true;
+                },
+                onError: (err) => {
+                    logEvent({ data: 'Connection error' }, 'error');
+                    disconnectBtn.disabled = true;
+                    reconnectBtn.disabled = false;
+                },
+                onReconnectAttempt: (n) => {
+                    logEvent({ data: `Reconnecting (attempt #${n})` }, 'normal');
+                },
+                onMaxRetriesExceeded: () => {
+                    logEvent({ data: 'Max retries exceeded' }, 'error');
+                    reconnectBtn.disabled = false;
+                },
+                // onStreamEnd: () => {
+                //     console.log("on stream end called!")
+                //     logEvent({ data: 'Stream ended normally' }, 'normal');
+                //     sseClient = null;
+                //     connectBtn.disabled = false;
+                //     disconnectBtn.disabled = true;
+                //     reconnectBtn.disabled = true;
+                // }
+            });
 
-      sseClient.on('ping', () => {
-        log(`🫀 Heartbeat received`);
-      });
+            sseClient.on('message', (data) => {
+                console.log("message event called!");
+                logEvent(data, 'normal');
+            });
 
-      sseClient.connect();
-    };
+            sseClient.on('end', (data) => {
+                console.log("end event called!");
+                logEvent(data, 'normal');
+                disconnect();
+            });
 
-    document.getElementById('stop').onclick = () => {
-      if (sseClient) {
-        sseClient.close();
-        log('⛔ Stream stopped');
-      }
-    };
-  </script>
+            sseClient.on('ping', () => {
+                logEvent({ data: 'Heartbeat received' }, 'heartbeat');
+            });
+
+            sseClient.on("test", (data) => {
+                console.log("test event called!");
+                logEvent(data, 'normal');
+            });
+
+            sseClient.connect();
+        }
+
+        function disconnect() {
+            if (sseClient) {
+                sseClient.close();
+                sseClient = null;
+                logEvent({ data: 'Connection closed' }, 'normal');
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        reconnectBtn.addEventListener('click', () => {
+            if (sseClient) {
+                sseClient.reconnect();
+                reconnectBtn.disabled = true;
+            }
+        });
+
+        // Auto-connect on page load
+        // connect();
+    </script>
 </body>
 </html>

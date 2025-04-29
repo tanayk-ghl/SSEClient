@@ -1,6 +1,6 @@
 # SSEClient Documentation
 
-A robust TypeScript implementation of a Server-Sent Events (SSE) client with auto-reconnect, heartbeat handling, event ID persistence, and logging capabilities.
+A robust TypeScript implementation of a Server-Sent Events (SSE) client and server with auto-reconnect, heartbeat handling, event ID persistence, and logging capabilities.
 
 ## Features
 
@@ -27,14 +27,87 @@ Robust error handling and connection monitoring are fundamental for production-r
 
 ## Installation
 
-```typescript
-// Import the SSEClient and its options interface
-import { SSEClient, SSEOptions } from './SSEClient';
+```bash
+npm install
 ```
 
-## Usage
+## API Reference
 
-### Basic Implementation
+### SSEClient
+
+#### `SSEOptions` Interface
+
+Configuration options for the SSE client.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `headers` | `Record<string, string>` | `undefined` | Custom headers for the SSE connection |
+| `withCredentials` | `boolean` | `false` | Enable CORS credentials |
+| `onOpen` | `() => void` | `undefined` | Callback when connection opens |
+| `onError` | `(err: Event) => void` | `undefined` | Callback on connection error |
+| `onReconnectAttempt` | `(attempt: number) => void` | `undefined` | Callback on reconnection attempts |
+| `lastEventId` | `string` | `undefined` | Last received event ID for resuming |
+| `heartbeatInterval` | `number` | `undefined` | Interval for heartbeat pings (ms) |
+| `reconnectInterval` | `number` | `3000` | Base reconnect interval (ms) |
+| `enableLogging` | `boolean` | `false` | Enable internal logging |
+
+#### Methods
+
+##### `constructor(url: string, options?: SSEOptions)`
+Creates a new SSE client instance.
+```typescript
+const client = new SSEClient('http://api.example.com/events', {
+    enableLogging: true
+});
+```
+
+##### `connect(): void`
+Establishes the SSE connection.
+```typescript
+client.connect();
+```
+
+##### `on(event: string, handler: (data: any) => void): void`
+Registers an event listener.
+```typescript
+client.on('message', (data) => {
+    console.log(data);
+});
+```
+
+##### `close(): void`
+Closes the SSE connection and stops reconnection attempts.
+```typescript
+client.close();
+```
+
+### SSEServer
+
+#### `SSEServerOptions` Interface
+
+Configuration options for the SSE server.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxHistorySize` | `number` | `1000` | Maximum number of events to keep in history |
+
+#### Methods
+
+##### `constructor(options: SSEServerOptions = {})`
+Creates a new SSE server instance.
+```typescript
+const server = new SSEServer({ maxHistorySize: 1000 });
+```
+
+##### `streamToClient(req: Request, res: Response, eventIterator: AsyncIterable<any>, allowedEvents: string[] = ['message', 'end', 'test']): Promise<void>`
+Streams events to a client connection.
+```typescript
+await server.streamToClient(req, res, generateEvents(), ['message', 'custom']);
+```
+
+## Usage Examples
+
+### Basic Client Implementation
 
 ```typescript
 const client = new SSEClient('http://your-sse-endpoint.com/events', {
@@ -50,7 +123,7 @@ client.on('message', (data) => {
 client.connect();
 ```
 
-### Advanced Implementation
+### Advanced Client Implementation
 
 ```typescript
 const client = new SSEClient('http://your-sse-endpoint.com/events', {
@@ -79,89 +152,80 @@ client.on('ping', (data) => {
 });
 
 client.connect();
-
-// Later, to stop the connection:
-client.close();
 ```
 
-## API Reference
+### Server Implementation
 
-### `SSEOptions` Interface
-
-Configuration options for the SSE client.
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `headers` | `Record<string, string>` | `undefined` | Custom headers for the SSE connection |
-| `withCredentials` | `boolean` | `false` | Enable CORS credentials |
-| `onOpen` | `() => void` | `undefined` | Callback when connection opens |
-| `onError` | `(err: Event) => void` | `undefined` | Callback on connection error |
-| `onReconnectAttempt` | `(attempt: number) => void` | `undefined` | Callback on reconnection attempts |
-| `lastEventId` | `string` | `undefined` | Last received event ID for resuming |
-| `heartbeatInterval` | `number` | `undefined` | Interval for heartbeat pings (ms) |
-| `reconnectInterval` | `number` | `3000` | Base reconnect interval (ms) |
-| `enableLogging` | `boolean` | `false` | Enable internal logging |
-
-### `SSEClient` Class Methods
-
-#### `constructor(url: string, options?: SSEOptions)`
-Creates a new SSE client instance.
 ```typescript
-const client = new SSEClient('http://api.example.com/events', {
-    enableLogging: true
+import express from 'express';
+import cors from 'cors';
+import { SSEServer } from './SSEServer';
+
+const app = express();
+const PORT = 3001;
+
+app.use(cors());
+
+// Create SSE server instance
+const sseServer = new SSEServer({ maxHistorySize: 1000 });
+
+// Logging middleware
+const logRequest = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    next();
+};
+
+// Example event generator
+async function* generateEvents() {
+    for (let i = 0; i < 5; i++) {
+        yield { event: 'message', data: { msg: `Event #${i + 1}` } };
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+}
+
+// SSE endpoint handler
+app.get('/events', logRequest, async (req, res) => {
+    await sseServer.streamToClient(req, res, generateEvents(), ['message']);
+});
+
+app.listen(PORT, () => {
+    console.log(`SSE server running on http://localhost:${PORT}`);
 });
 ```
 
-#### `connect(): void`
-Establishes the SSE connection.
-```typescript
-client.connect();
-```
+## Running the Demo
 
-#### `on(event: string, handler: (data: any) => void): void`
-Registers an event listener.
-```typescript
-client.on('message', (data) => {
-    console.log(data);
-});
-```
+1. **Install Dependencies**
+   ```bash
+   npm install
+   ```
 
-#### `close(): void`
-Closes the SSE connection and stops reconnection attempts.
-```typescript
-client.close();
-```
+2. **Build the Project**
+   ```bash
+   npm run build  
+   ```
 
-## Internal Features
+3. **Start the Server**
+   ```bash
+   npm run dev
+   ```
 
-### Automatic Reconnection
-- Implements exponential backoff strategy
-- Reconnection interval = `reconnectInterval * attemptNumber`
-- Maintains reconnection count
-- Can be cancelled via `close()`
+4. **Serve the Client**
+   - Use any static file server to serve the client files
+   - For example, using Python's built-in server:
+     ```bash
+     python -m http.server 8000
+     ```
+   - Or using Node's `http-server`:
+     ```bash
+     npx http-server
+     ```
 
-### Event ID Persistence
-- Automatically stores last event ID in localStorage
-- Uses base64 encoded URL as storage key
-- Resumes connection from last known event
-
-### Heartbeat Mechanism
-- Sends periodic ping events at specified interval
-- Helps maintain connection health
-- Automatically managed with connection lifecycle
-
-### Logging System
-- Comprehensive debug logging when enabled
-- Logs connection events, messages, and errors
-- Configurable via `enableLogging` option
-
-## Error Handling
-
-The client handles various error scenarios:
-- Connection failures
-- JSON parsing errors
-- localStorage access errors
-- Event source errors
+5. **Access the Demo**
+   - Start the client.html file using the [Live Server VS Code extension](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer)
+   - Click "Start Stream" to begin receiving events
+   - Click "Stop Stream" to end the connection
+   - Watch the console for detailed logs
 
 ## Best Practices
 
@@ -202,144 +266,3 @@ Works with browsers that support:
 - Promise
 - Map
 - ES2015+ features
-
-## Demo Implementation
-
-This repository includes a complete demo showing how to implement the SSEClient with a basic server and web client.
-
-### Server Implementation (server.js)
-
-A simple Express server that demonstrates SSE endpoint implementation:
-
-```javascript
-const express = require('express');
-const cors = require('cors');
-const app = express();
-
-app.use(cors());
-
-app.get('/events', (req, res) => {
-    // Set SSE headers
-    res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
-    });
-
-    // Send initial connection message
-    res.write(`data: ${JSON.stringify({ message: 'Connected to event stream' })}\n\n`);
-
-    // Send periodic updates
-    const intervalId = setInterval(() => {
-        const data = {
-            timestamp: new Date().toISOString(),
-            value: Math.random()
-        };
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-    }, 3000);
-
-    // Clean up on client disconnect
-    req.on('close', () => {
-        clearInterval(intervalId);
-    });
-});
-
-const PORT = 3001;
-app.listen(PORT, () => {
-    console.log(`SSE Demo server running on port ${PORT}`);
-});
-```
-
-### Client Implementation (client.html)
-
-A demo webpage that shows how to use the SSEClient in the browser:
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <title>SSEClient Demo</title>
-    <style>
-        body { font-family: sans-serif; padding: 2rem; }
-        #events { margin-top: 1rem; }
-    </style>
-</head>
-<body>
-    <h1>SSE Event Stream</h1>
-    <button id="start">Start Stream</button>
-    <button id="stop">Stop Stream</button>
-    <div id="events"></div>
-
-    <script type="module">
-        import { SSEClient } from './SSEClient.js';
-
-        const log = (msg) => {
-            const div = document.getElementById('events');
-            const p = document.createElement('p');
-            p.textContent = msg;
-            div.appendChild(p);
-        };
-
-        let sseClient = null;
-
-        document.getElementById('start').onclick = () => {
-            sseClient = new SSEClient('http://localhost:3001/events', {
-                enableLogging: true,
-                reconnectInterval: 2000,
-                heartbeatInterval: 15000,
-                onOpen: () => log('✔ Connected'),
-                onError: () => log('❌ Error occurred'),
-                onReconnectAttempt: (n) => log(`🔁 Reconnecting (#${n})`)
-            });
-
-            sseClient.on('message', (data) => {
-                log(`📥 Event: ${JSON.stringify(data)}`);
-            });
-
-            sseClient.on('ping', () => {
-                log(`🫀 Heartbeat received`);
-            });
-
-            sseClient.connect();
-        };
-
-        document.getElementById('stop').onclick = () => {
-            if (sseClient) {
-                sseClient.close();
-                log('⛔ Stream stopped');
-            }
-        };
-    </script>
-</body>
-</html>
-```
-
-### Running the Demo
-
-1. **Install Dependencies**
-   ```bash
-   npm install express cors
-   ```
-
-2. **Start the Server**
-   ```bash
-   node server.js
-   ```
-
-3. **Serve the Client**
-   - Use any static file server to serve the client files
-   - For example, using Python's built-in server:
-     ```bash
-     python -m http.server 8000
-     ```
-   - Or using Node's `http-server`:
-     ```bash
-     npx http-server
-     ```
-
-4. **Access the Demo**
-   - Open your browser and navigate to `http://localhost:8000/client.html`
-   - Click "Start Stream" to begin receiving events
-   - Click "Stop Stream" to end the connection
-   - Watch the console for detailed logs
