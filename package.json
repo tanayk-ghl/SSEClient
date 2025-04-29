@@ -1,0 +1,19 @@
+{
+  "name": "sseclient",
+  "version": "1.0.0",
+  "main": "client.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js", 
+    "build-client": "npx tsc -p ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "typescript": "^5.8.3"
+  }
+}

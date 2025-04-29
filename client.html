@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SSEClient Demo</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; }
+    #events { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>SSE Event Stream</h1>
+  <button id="start">Start Stream</button>
+  <button id="stop">Stop Stream</button>
+  <div id="events"></div>
+
+  <script type="module">
+    import { SSEClient } from './SSEClient.js'; // Adjust path as needed
+
+    const log = (msg) => {
+      const div = document.getElementById('events');
+      const p = document.createElement('p');
+      p.textContent = msg;
+      div.appendChild(p);
+    };
+
+    let sseClient = null;
+
+    document.getElementById('start').onclick = () => {
+      sseClient = new SSEClient('http://localhost:3001/events', {
+        enableLogging: true,
+        reconnectInterval: 2000,
+        heartbeatInterval: 15000,
+        onOpen: () => log('✔ Connected'),
+        onError: () => log('❌ Error occurred'),
+        onReconnectAttempt: (n) => log(`🔁 Reconnecting (#${n})`)
+      });
+
+      sseClient.on('message', (data) => {
+        log(`📥 Event: ${JSON.stringify(data)}`);
+      });
+
+      sseClient.on('ping', () => {
+        log(`🫀 Heartbeat received`);
+      });
+
+      sseClient.connect();
+    };
+
+    document.getElementById('stop').onclick = () => {
+      if (sseClient) {
+        sseClient.close();
+        log('⛔ Stream stopped');
+      }
+    };
+  </script>
+</body>
+</html>
